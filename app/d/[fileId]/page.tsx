@@ -25,7 +25,7 @@ export default function DownloadPage({ params }: { params: Promise<{ fileId: str
           }
           setStatus('idle');
         } else if (res.status === 404) {
-          toast.error("File non trovato");
+          toast.error("File not found");
           setStatus('idle');
         }
       })
@@ -37,14 +37,14 @@ export default function DownloadPage({ params }: { params: Promise<{ fileId: str
 
   const handleBuy = async () => {
     if (!meta || !meta.amount || !meta.recipient) {
-      toast.error("Dati mancanti");
+      toast.error("Missing data");
       return;
     }
 
     setStatus('paying');
 
     if (typeof window.ethereum === 'undefined') {
-      toast.error("Installa Metamask");
+      toast.error("Install Metamask");
       setStatus('idle');
       return;
     }
@@ -63,10 +63,10 @@ export default function DownloadPage({ params }: { params: Promise<{ fileId: str
         value: parseEther(meta.amount.toString())
       });
 
-      // --- NUOVO: Salviamo la Hash appena generata ---
+      // --- NUOVO: Salviamo Hash appena generata ---
       setTxHash(hash); 
       
-      toast.info("Transazione inviata! Verifica in corso...");
+      toast.info("Tx send! Checking on-chain...");
       setStatus('verifying');
 
       // Attesa propagazione (4 secondi)
@@ -96,14 +96,14 @@ export default function DownloadPage({ params }: { params: Promise<{ fileId: str
         document.body.appendChild(a);
         a.click();
         a.remove();
-        toast.success("Download completato!");
+        toast.success("Download completed!");
       } else {
         const err = await finalReq.json();
-        throw new Error(err.error || "Verifica fallita");
+        throw new Error(err.error || "Verification failed");
       }
     } catch (e: any) {
       console.error(e);
-      toast.error("Errore: " + (e.message || "Fallito"));
+      toast.error("Errore: " + (e.message || "Failed"));
       setStatus('idle');
     }
   };
@@ -118,12 +118,21 @@ export default function DownloadPage({ params }: { params: Promise<{ fileId: str
           {status === 'downloading' ? <Unlock className="text-green-400" size={32} /> : <Lock className="text-red-400" size={32} />}
         </div>
 
-        <h2 className="text-2xl font-bold mb-2">File Protetto</h2>
+        <h2 className="text-2xl font-bold mb-2">            
+          {meta?.originalName ? meta.originalName : ""}
+        </h2>
         
         <div className="bg-black/40 border border-zinc-800 rounded-xl p-5 mb-8 flex justify-between items-center">
-          <span className="text-zinc-400 text-sm">Prezzo</span>
+          <span className="text-zinc-400 text-sm">Price</span>
           <span className="text-2xl font-mono font-bold text-white">
             {meta?.amount ? meta.amount : "..."} ETH
+          </span>
+        </div>
+
+        <div className="bg-black/40 border border-zinc-800 rounded-xl p-5 mb-8 flex justify-between items-center">
+          <span className="text-zinc-400 text-sm">Owner</span>
+          <span className="text-2xl font-mono font-bold text-white">
+            {meta?.sellerWallet ? meta.sellerWallet : ""}
           </span>
         </div>
 
@@ -136,10 +145,10 @@ export default function DownloadPage({ params }: { params: Promise<{ fileId: str
               ? 'bg-white text-black hover:bg-zinc-200' 
               : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'}`}
         >
-          {status === 'idle' && <>Sblocca <Download size={20}/></>}
-          {(status === 'paying') && <><Loader2 className="animate-spin"/> Conferma nel Wallet...</>}
-          {(status === 'verifying') && <><Loader2 className="animate-spin"/> Verifica on-chain...</>}
-          {(status === 'downloading') && <>Scaricamento in corso...</>}
+          {status === 'idle' && <>Unlock <Download size={20}/></>}
+          {(status === 'paying') && <><Loader2 className="animate-spin"/> Wallet confirm...</>}
+          {(status === 'verifying') && <><Loader2 className="animate-spin"/>On-chain check...</>}
+          {(status === 'downloading') && <>Downloading file...</>}
         </button>
 
         {/* --- NUOVO: LINK ALLA TRANSAZIONE --- */}
@@ -151,10 +160,12 @@ export default function DownloadPage({ params }: { params: Promise<{ fileId: str
               rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 text-xs text-indigo-400 hover:text-indigo-300 hover:underline transition-colors p-2"
             >
-              Vedi Transazione su BaseScan <ExternalLink size={12} />
+              See Tx on BaseScan <ExternalLink size={12} />
             </a>
             {status === 'verifying' && (
-               <p className="text-xs text-zinc-500 mt-1">L'operazione può richiedere qualche secondo...</p>
+               <p className="text-xs text-zinc-500 mt-1">
+                The operation may take a few seconds...
+                </p>
             )}
           </div>
         )}
