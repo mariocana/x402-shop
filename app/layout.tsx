@@ -6,7 +6,7 @@ import { Toaster } from 'sonner';
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "x402 Drop",
+  title: "x402 Shop",
   description: "P2P Pay-per-download protocol",
 };
 
