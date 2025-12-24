@@ -5,6 +5,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
 import fs from 'fs';
 import path from 'path';
+import readline from 'readline';
 
 // CONFIGURATION
 const MARKET_URL = 'http://localhost:3000'; 
@@ -25,8 +26,34 @@ const walletClient = createWalletClient({
 });
 const publicClient = createPublicClient({ chain: baseSepolia, transport: http() });
 
+// --- Funzione di attesa ---
+function waitForStart(): Promise<void> {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+
+    return new Promise(resolve => {
+        console.clear();
+        console.log("\n\n");
+        console.log("   ╔══════════════════════════════════════════╗");
+        console.log("   ║      x402 AUTONOMOUS AGENT SYSTEM        ║");
+        console.log("   ║           Status: STANDBY                ║");
+        console.log("   ╚══════════════════════════════════════════╝");
+        console.log("\n");
+        
+        rl.question('   > Press [ENTER] to initialize sequence...', () => {
+            rl.close();
+            resolve();
+        });
+    });
+}
+
 async function runAgent() {
-  console.log(`\n🤖 x402 AUTONOMOUS AGENT INITIALIZED`);
+
+  await waitForStart();
+
+  console.log(`\n\n🤖 AGENT INITIALIZED`);
   console.log(`🆔 Identity: ${account.address}`);
   
   // 2. Discovery Phase
