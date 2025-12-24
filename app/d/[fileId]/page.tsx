@@ -2,27 +2,30 @@
 import { useEffect, useState, use } from 'react';
 import { createWalletClient, custom, parseEther } from 'viem';
 import { baseSepolia } from 'viem/chains'; 
-import { Lock, Unlock, Download, Loader2, ExternalLink } from 'lucide-react'; // Aggiunto ExternalLink
+import { Lock, Unlock, Download, Loader2, ExternalLink, FileText, User } from 'lucide-react';
 import { toast } from 'sonner';
+
+// Utility per accorciare l'indirizzo
+const shortenAddress = (addr: string) => {
+  if (!addr) return '';
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+};
 
 export default function DownloadPage({ params }: { params: Promise<{ fileId: string }> }) {
   const { fileId } = use(params);
 
   const [status, setStatus] = useState<'loading' | 'idle' | 'paying' | 'verifying' | 'downloading'>('loading');
-  const [meta, setMeta] = useState<any>(null);
-  const [txHash, setTxHash] = useState<string | null>(null); // <--- NUOVO STATO
+  
+  // State per i dettagli del file
+  const [fileDetails, setFileDetails] = useState<any>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
 
-  // 1. Fetch Iniziale
   useEffect(() => {
     fetch(`/api/download/${fileId}`, { method: 'POST' })
       .then(async (res) => {
         if (res.status === 402) {
           const data = await res.json();
-          if (data.offers && data.offers.length > 0) {
-            setMeta(data.offers[0]);
-          } else {
-            setMeta(data);
-          }
+          setFileDetails(data); // Salviamo tutto il JSON (fileName, sellerWallet, offers)
           setStatus('idle');
         } else if (res.status === 404) {
           toast.error("File not found");
@@ -36,15 +39,17 @@ export default function DownloadPage({ params }: { params: Promise<{ fileId: str
   }, [fileId]);
 
   const handleBuy = async () => {
-    if (!meta || !meta.amount || !meta.recipient) {
-      toast.error("Missing data");
+    if (!fileDetails || !fileDetails.offers) {
+      toast.error("Dati mancanti");
       return;
     }
+
+    const offer = fileDetails.offers[0]; // Prendiamo l'offerta
 
     setStatus('paying');
 
     if (typeof window.ethereum === 'undefined') {
-      toast.error("Install Metamask");
+      toast.error("Installa Metamask");
       setStatus('idle');
       return;
     }
@@ -56,23 +61,19 @@ export default function DownloadPage({ params }: { params: Promise<{ fileId: str
       });
       const [account] = await walletClient.requestAddresses();
 
-      // 2. Invio Transazione
+      // Pagamento P2P
       const hash = await walletClient.sendTransaction({
         account,
-        to: meta.recipient, 
-        value: parseEther(meta.amount.toString())
+        to: offer.recipient, 
+        value: parseEther(offer.amount.toString())
       });
 
-      // --- NUOVO: Salviamo Hash appena generata ---
       setTxHash(hash); 
-      
-      toast.info("Tx send! Checking on-chain...");
+      toast.info("Transazione inviata! Verifica in corso...");
       setStatus('verifying');
 
-      // Attesa propagazione (4 secondi)
       await new Promise(r => setTimeout(r, 4000));
 
-      // 3. Invio Hash al server
       const finalReq = await fetch(`/api/download/${fileId}`, {
         method: 'POST',
         headers: { 'X-Payment': hash }
@@ -82,12 +83,8 @@ export default function DownloadPage({ params }: { params: Promise<{ fileId: str
         setStatus('downloading');
         const blob = await finalReq.blob();
         
-        const contentDisposition = finalReq.headers.get('Content-Disposition');
-        let fileName = "file-download";
-        if (contentDisposition) {
-            const match = contentDisposition.match(/filename="?([^"]+)"?/);
-            if (match && match[1]) fileName = match[1];
-        }
+        // Nome file dal backend o header
+        const fileName = fileDetails.fileName || "downloaded-file";
 
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -96,14 +93,14 @@ export default function DownloadPage({ params }: { params: Promise<{ fileId: str
         document.body.appendChild(a);
         a.click();
         a.remove();
-        toast.success("Download completed!");
+        toast.success("Download completato!");
       } else {
         const err = await finalReq.json();
-        throw new Error(err.error || "Verification failed");
+        throw new Error(err.error || "Verifica fallita");
       }
     } catch (e: any) {
       console.error(e);
-      toast.error("Errore: " + (e.message || "Failed"));
+      toast.error("Errore: " + (e.message || "Fallito"));
       setStatus('idle');
     }
   };
@@ -111,62 +108,79 @@ export default function DownloadPage({ params }: { params: Promise<{ fileId: str
   if (status === 'loading') return <div className="min-h-screen flex items-center justify-center bg-zinc-950"><Loader2 className="animate-spin text-white"/></div>;
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-zinc-950 text-white">
-      <div className="w-full max-w-md bg-zinc-900/60 backdrop-blur-md border border-zinc-700/50 rounded-3xl p-8 shadow-2xl text-center">
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-zinc-950 text-white relative overflow-hidden">
+      
+      {/* Background Glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[100px] -z-10"></div>
+
+      <div className="w-full max-w-md bg-zinc-900/80 backdrop-blur-xl border border-zinc-700/50 rounded-3xl p-8 shadow-2xl text-center">
         
-        <div className="mx-auto w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mb-6 shadow-inner ring-1 ring-white/10">
-          {status === 'downloading' ? <Unlock className="text-green-400" size={32} /> : <Lock className="text-red-400" size={32} />}
+        {/* Icona Lock */}
+        <div className="mx-auto w-16 h-16 bg-zinc-800 rounded-2xl flex items-center justify-center mb-6 shadow-inner ring-1 ring-white/5">
+          {status === 'downloading' ? <Unlock className="text-green-400" size={28} /> : <Lock className="text-red-400" size={28} />}
         </div>
 
-        <h2 className="text-2xl font-bold mb-2">            
-          {meta?.originalName ? meta.originalName : ""}
-        </h2>
+        <h2 className="text-xl font-bold mb-1 text-white">Unlock Digital Asset</h2>
+        <p className="text-zinc-500 text-xs mb-6 uppercase tracking-wider">x402 Protocol Secured</p>
         
-        <div className="bg-black/40 border border-zinc-800 rounded-xl p-5 mb-8 flex justify-between items-center">
-          <span className="text-zinc-400 text-sm">Price</span>
-          <span className="text-2xl font-mono font-bold text-white">
-            {meta?.amount ? meta.amount : "..."} ETH
-          </span>
+        {/* --- DETTAGLI FILE (Tabella) --- */}
+        <div className="bg-black/40 border border-zinc-800 rounded-xl p-4 mb-6 space-y-3">
+            
+            {/* Nome File */}
+            <div className="flex items-center justify-between">
+                <span className="text-zinc-500 text-sm flex items-center gap-2"><FileText size={14}/> File Name</span>
+                <span className="text-white font-medium text-sm truncate max-w-[150px]" title={fileDetails?.fileName}>
+                    {fileDetails?.fileName || "Unknown"}
+                </span>
+            </div>
+
+            <div className="h-[1px] bg-zinc-800 w-full"></div>
+
+            {/* Owner Address */}
+            <div className="flex items-center justify-between">
+                <span className="text-zinc-500 text-sm flex items-center gap-2"><User size={14}/> Seller</span>
+                <span className="text-indigo-400 font-mono text-xs bg-indigo-500/10 px-2 py-1 rounded">
+                    {shortenAddress(fileDetails?.sellerWallet)}
+                </span>
+            </div>
+
+            <div className="h-[1px] bg-zinc-800 w-full"></div>
+
+            {/* Prezzo */}
+            <div className="flex items-center justify-between">
+                <span className="text-zinc-500 text-sm">Price</span>
+                <span className="text-xl font-mono font-bold text-white">
+                    {fileDetails?.offers?.[0]?.amount || "..."} ETH
+                </span>
+            </div>
         </div>
 
-        <div className="bg-black/40 border border-zinc-800 rounded-xl p-5 mb-8 flex justify-between items-center">
-          <span className="text-zinc-400 text-sm">Owner</span>
-          <span className="text-2xl font-mono font-bold text-white">
-            {meta?.sellerWallet ? meta.sellerWallet : ""}
-          </span>
-        </div>
-
-        {/* --- BOTTONE PRINCIPALE --- */}
+        {/* Bottone */}
         <button 
           onClick={handleBuy}
           disabled={status !== 'idle'}
           className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all mb-4
             ${status === 'idle' 
-              ? 'bg-white text-black hover:bg-zinc-200' 
+              ? 'bg-white text-black hover:bg-zinc-200 shadow-lg shadow-white/5' 
               : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'}`}
         >
-          {status === 'idle' && <>Unlock <Download size={20}/></>}
-          {(status === 'paying') && <><Loader2 className="animate-spin"/> Wallet confirm...</>}
-          {(status === 'verifying') && <><Loader2 className="animate-spin"/>On-chain check...</>}
-          {(status === 'downloading') && <>Downloading file...</>}
+          {status === 'idle' && <>Purchase & Download <Download size={20}/></>}
+          {(status === 'paying') && <><Loader2 className="animate-spin"/> Check Wallet...</>}
+          {(status === 'verifying') && <><Loader2 className="animate-spin"/> Verifying...</>}
+          {(status === 'downloading') && <>Success!</>}
         </button>
 
-        {/* --- NUOVO: LINK ALLA TRANSAZIONE --- */}
+        {/* Link Transazione */}
         {txHash && (
           <div className="animate-in fade-in slide-in-from-top-2">
             <a 
               href={`https://sepolia.basescan.org/tx/${txHash}`} 
               target="_blank" 
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 text-xs text-indigo-400 hover:text-indigo-300 hover:underline transition-colors p-2"
+              className="flex items-center justify-center gap-2 text-xs text-zinc-500 hover:text-white transition-colors"
             >
-              See Tx on BaseScan <ExternalLink size={12} />
+              View on BaseScan <ExternalLink size={10} />
             </a>
-            {status === 'verifying' && (
-               <p className="text-xs text-zinc-500 mt-1">
-                The operation may take a few seconds...
-                </p>
-            )}
           </div>
         )}
 
